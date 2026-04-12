@@ -97,11 +97,8 @@
     </div>
 
     <script>
-        // --- CONFIGURATION ---
-        // L'URL de votre Google Apps Script
         const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywolCKHQRCE2_ZgwSFJ5rmmsXBWr4kgK3lm-NI229NCWIl_jQV4AzBetdcMmcnM-krdg/exec";
-
-        // --- ELEMENTS DU DOM ---
+    
         const fileInput = document.getElementById('fileInput');
         const previewContainer = document.getElementById('previewContainer');
         const submitBtn = document.getElementById('submitBtn');
@@ -111,11 +108,31 @@
         const progressBar = document.getElementById('progressBar');
         const gallery = document.getElementById('gallery');
         const emptyGallery = document.getElementById('emptyGallery');
-
+    
         let selectedFiles = [];
         let galleryPhotos = [];
-
-        // Gérer la sélection de fichiers et créer les miniatures
+    
+        // ✅ NOUVEAU : Charger les photos existantes depuis le Drive au démarrage
+        async function loadGalleryFromDrive() {
+            emptyGallery.textContent = "⏳ Chargement de l'album...";
+            try {
+                const response = await fetch(GOOGLE_WEB_APP_URL);
+                const data = await response.json();
+    
+                if (data.success && data.photos.length > 0) {
+                    galleryPhotos = data.photos;
+                    renderGallery();
+                } else {
+                    emptyGallery.classList.remove('hidden');
+                    emptyGallery.textContent = "Aucune photo pour l'instant... Soyez le premier à partager ! 💕";
+                }
+            } catch (err) {
+                console.error("Erreur chargement galerie:", err);
+                emptyGallery.textContent = "Impossible de charger l'album pour l'instant 🌿";
+            }
+        }
+    
+        // Gérer la sélection de fichiers
         fileInput.addEventListener('change', function(e) {
             const files = Array.from(e.target.files);
             files.forEach(file => {
@@ -126,147 +143,109 @@
                         const imgDiv = document.createElement('div');
                         imgDiv.className = 'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 border-white shadow-sm relative group';
                         imgDiv.innerHTML = '<img src="' + event.target.result + '" class="w-full h-full object-cover"><div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white text-xs font-bold">X</div>';
-                        
-                        // Permettre de retirer une image
                         imgDiv.querySelector('div').addEventListener('click', function() {
                             const index = selectedFiles.indexOf(file);
-                            if (index > -1) {
-                                selectedFiles.splice(index, 1);
-                            }
+                            if (index > -1) selectedFiles.splice(index, 1);
                             imgDiv.remove();
                         });
-
                         previewContainer.appendChild(imgDiv);
                     };
                     reader.readAsDataURL(file);
                 }
             });
-            fileInput.value = ''; // Réinitialiser l'input
+            fileInput.value = '';
         });
-
-        // Fonction pour afficher un message
+    
         function showStatus(msg, isSuccess) {
             statusMessage.textContent = msg;
             statusMessage.className = 'text-center p-4 rounded-xl mt-4 font-semibold ' + (isSuccess ? 'bg-[#d1e7d8] text-[#2a4531]' : 'bg-[#f8d7da] text-[#721c24]');
             statusMessage.classList.remove('hidden');
         }
-
-        // Gérer l'envoi des fichiers
+    
         submitBtn.addEventListener('click', async function() {
             statusMessage.classList.add('hidden');
-            
             const name = authorName.value.trim();
-            if (!name) {
-                showStatus('Oops ! Indiquez votre prénom pour signer vos photos 💕', false);
-                return;
-            }
-            if (selectedFiles.length === 0) {
-                showStatus('Sélectionnez au moins une photo à partager 🌿', false);
-                return;
-            }
-
-            // Désactiver le bouton et montrer la progression
+            if (!name) { showStatus('Oops ! Indiquez votre prénom pour signer vos photos 💕', false); return; }
+            if (selectedFiles.length === 0) { showStatus('Sélectionnez au moins une photo à partager 🌿', false); return; }
+    
             submitBtn.disabled = true;
             submitBtn.classList.add('opacity-70');
             submitBtn.textContent = "⏳ Envoi en cours...";
             progressContainer.classList.remove('hidden');
-            progressBar.style.width = '10%'; // Petite avancée visuelle immédiate
-
+            progressBar.style.width = '10%';
+    
             let successCount = 0;
             const totalFiles = selectedFiles.length;
-
+    
             try {
                 for (let i = 0; i < selectedFiles.length; i++) {
                     const file = selectedFiles[i];
-                    
-                    // Lire le fichier en Base64
                     const base64Data = await new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onload = (e) => resolve(e.target.result);
                         reader.readAsDataURL(file);
                     });
-
-                    // Extraire uniquement la partie donnée du base64 (sans le header mime-type)
                     const base64String = base64Data.split(',')[1];
-                    
-                    // Préparer les données pour Google Apps Script
                     let formData = new URLSearchParams();
                     formData.append('fileName', name + "_" + file.name);
                     formData.append('mimeType', file.type);
                     formData.append('fileData', base64String);
-
-                    // Envoyer la requête au serveur Google
+    
                     const response = await fetch(GOOGLE_WEB_APP_URL, {
                         method: 'POST',
                         body: formData,
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
                     });
-
+    
                     if (response.ok) {
                         successCount++;
-                        // Ajouter à la galerie visuelle immédiatement (Optimistic UI)
-                        galleryPhotos.unshift({
-                            src: base64Data,
-                            author: name
-                        });
+                        // Ajout optimiste en tête de galerie avec le base64 local
+                        galleryPhotos.unshift({ src: base64Data, author: name });
                     }
-
-                    // Mettre à jour la barre de progression
-                    const progress = Math.round(((i + 1) / totalFiles) * 100);
-                    progressBar.style.width = progress + '%';
+    
+                    progressBar.style.width = Math.round(((i + 1) / totalFiles) * 100) + '%';
                 }
-
-                // Fin de la boucle d'envoi
+    
                 renderGallery();
-
+    
                 if (successCount > 0) {
-                    showStatus('🎉 ' + successCount + ' photo(s) bien sauvegardée(s) dans le Drive, merci ' + name + ' ! 💖', true);
-                    // Réinitialiser le formulaire
+                    showStatus('🎉 ' + successCount + ' photo(s) bien sauvegardée(s), merci ' + name + ' ! 💖', true);
                     selectedFiles = [];
                     previewContainer.innerHTML = '';
                     authorName.value = '';
                 } else {
                     showStatus('Une erreur est survenue lors de l\'enregistrement. 🙏', false);
                 }
-
+    
             } catch (error) {
-                console.error("Erreur de connexion:", error);
-                showStatus('Problème de connexion avec le serveur. Réessayez plus tard 🌿', false);
+                console.error("Erreur:", error);
+                showStatus('Problème de connexion. Réessayez plus tard 🌿', false);
             } finally {
-                // Restaurer le bouton
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('opacity-70');
                 submitBtn.textContent = "✨ Envoyer mes photos";
-                
-                // Cacher la progression après un instant
-                setTimeout(() => {
-                    progressContainer.classList.add('hidden');
-                    progressBar.style.width = '0%';
-                }, 1000);
-
-                // Cacher le message de succès après 6 secondes
-                setTimeout(() => {
-                    statusMessage.classList.add('hidden');
-                }, 6000);
+                setTimeout(() => { progressContainer.classList.add('hidden'); progressBar.style.width = '0%'; }, 1000);
+                setTimeout(() => { statusMessage.classList.add('hidden'); }, 6000);
             }
         });
-
-        // Fonction pour afficher la galerie
+    
         function renderGallery() {
+            gallery.innerHTML = '';
             if (galleryPhotos.length > 0) {
                 emptyGallery.classList.add('hidden');
+                galleryPhotos.forEach(photo => {
+                    const item = document.createElement('div');
+                    item.className = 'masonry-item bg-white rounded-xl overflow-hidden shadow-sm border border-[#e8f3e9] transition-transform hover:-translate-y-1 hover:shadow-md';
+                    item.innerHTML = '<img src="' + photo.src + '" class="w-full h-auto" loading="lazy"><div class="p-3 bg-white border-t border-[#f0fdf4] text-center"><p class="text-sm font-semibold text-[#416149]">✨ ' + photo.author + '</p></div>';
+                    gallery.appendChild(item);
+                });
             } else {
                 emptyGallery.classList.remove('hidden');
             }
-
-            gallery.innerHTML = '';
-            galleryPhotos.forEach(photo => {
-                const item = document.createElement('div');
-                item.className = 'masonry-item bg-white rounded-xl overflow-hidden shadow-sm border border-[#e8f3e9] transition-transform hover:-translate-y-1 hover:shadow-md';
-                item.innerHTML = '<img src="' + photo.src + '" class="w-full h-auto" loading="lazy"><div class="p-3 bg-white border-t border-[#f0fdf4] text-center"><p class="text-sm font-semibold text-[#416149]">✨ ' + photo.author + '</p></div>';
-                gallery.appendChild(item);
-            });
         }
+    
+        // ✅ Lancer le chargement au démarrage
+        loadGalleryFromDrive();
     </script>
 </body>
 </html>
