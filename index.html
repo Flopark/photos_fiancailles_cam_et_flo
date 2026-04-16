@@ -95,7 +95,7 @@
         <!-- Indicateur de chargement de la galerie -->
         <div id="galleryLoader" class="text-center py-10">
             <div class="loader mb-4"></div>
-            <p class="text-[#7eb28f] italic" id="loaderText">Lecture des photos depuis le Drive en cours...</p>
+            <p class="text-[#7eb28f] italic mt-4" id="loaderText">Lecture des photos depuis le Drive en cours...</p>
         </div>
 
         <div id="gallery" class="masonry hidden"></div>
@@ -112,8 +112,8 @@
 
     <script>
         // --- CONFIGURATION ---
-        // ⚠️ REMPLACEZ CETTE URL PAR LA VOTRE
-        const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyOXcunkSgXyKVTIFlEH_4C8-brXFiCw2JB29WOj7JVHvmLnwPCwEY1EhFRkiPULWiidw/exec";
+        // ⚠️ REMPLACEZ CETTE URL PAR LA VOTRE SI BESOIN
+        const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw1PdBhzJYEjUPrF67FC3TMz-H041ASpJPm4oDh16apeBq5JmraFp4UuNNDnX9AT_B-oA/exec";
 
         // --- ELEMENTS DU DOM ---
         const fileInput = document.getElementById('fileInput');
@@ -134,28 +134,42 @@
         // --- FONCTION : LIRE LES PHOTOS DU DRIVE DANS L'ORDRE ---
         window.addEventListener('load', async () => {
             try {
-                // On interroge le Google Drive
                 const response = await fetch(GOOGLE_WEB_APP_URL, {
                     method: 'GET',
-                    redirect: 'follow'
+                    redirect: 'follow',
+                    // On peut ajouter le mode cors explicitement bien qu'il soit par défaut
+                    mode: 'cors'
                 });
                 
                 const data = await response.json();
                 
                 if (data.status === "success" && data.files && data.files.length > 0) {
-                    // Pour chaque fichier trouvé dans le drive, on prépare son affichage
                     galleryPhotos = data.files.map(file => ({
-                        // 🔑 ASTUCE : Utiliser l'API thumbnail de Google garantit que l'image s'affiche toujours sur les sites web
                         src: `https://drive.google.com/thumbnail?id=${file.id}&sz=w1000`, 
                         author: file.author
                     }));
                 }
             } catch (error) {
                 console.error("Erreur de lecture Drive:", error);
-                loaderText.textContent = "Impossible de charger l'album pour le moment.";
+                
+                // Détection spécifique de l'erreur "Failed to fetch" (CORS)
+                if (error.name === 'TypeError' || error.message.includes('fetch')) {
+                    loaderText.innerHTML = `
+                        <span class="text-red-500 font-bold block mb-2">Erreur de sécurité (CORS) bloquée par le navigateur.</span>
+                        <span class="text-sm">Pour corriger cela, sur Google Apps Script :<br> 
+                        Faites un <b>Nouveau déploiement</b> et mettez impérativement "Qui a accès" sur <b>"Tout le monde"</b>.</span>`;
+                    loaderText.classList.remove("text-[#7eb28f]");
+                    loaderText.classList.add("text-[#2a4531]");
+                    document.querySelector('.loader').style.display = 'none'; // Cache l'animation
+                } else {
+                    loaderText.textContent = "Impossible de charger l'album pour le moment.";
+                }
             } finally {
-                galleryLoader.classList.add('hidden');
-                renderGallery(); // On dessine la galerie avec ce qu'on a trouvé
+                // On n'affiche la galerie (même vide) que s'il n'y a pas d'erreur critique de fetch bloquante non gérée
+                if (!loaderText.innerHTML.includes("Erreur de sécurité")) {
+                    galleryLoader.classList.add('hidden');
+                    renderGallery();
+                }
             }
         });
 
@@ -164,15 +178,12 @@
             gallery.innerHTML = '';
             
             if (galleryPhotos.length === 0) {
-                // Si aucune photo n'a été lue
                 emptyGallery.classList.remove('hidden');
                 gallery.classList.add('hidden');
             } else {
-                // Si des photos ont été lues
                 emptyGallery.classList.add('hidden');
                 gallery.classList.remove('hidden');
                 
-                // On affiche chaque photo l'une après l'autre
                 galleryPhotos.forEach(photo => {
                     const item = document.createElement('div');
                     item.className = 'masonry-item bg-white rounded-xl overflow-hidden shadow-sm border border-[#e8f3e9] transition-transform hover:-translate-y-1 hover:shadow-md';
@@ -214,7 +225,7 @@
         });
 
         function showStatus(msg, isSuccess) {
-            statusMessage.textContent = msg;
+            statusMessage.innerHTML = msg; // Support HTML
             statusMessage.className = 'text-center p-4 rounded-xl mt-4 font-semibold ' + (isSuccess ? 'bg-[#d1e7d8] text-[#2a4531]' : 'bg-[#f8d7da] text-[#721c24]');
             statusMessage.classList.remove('hidden');
         }
@@ -260,7 +271,6 @@
 
                     if (response.ok) {
                         successCount++;
-                        // On ajoute la nouvelle photo tout en haut de la galerie existante
                         galleryPhotos.unshift({
                             src: base64Data,
                             author: name
@@ -271,7 +281,6 @@
                     progressBar.style.width = progress + '%';
                 }
 
-                // On redessine la galerie pour inclure la nouveauté
                 renderGallery();
 
                 if (successCount > 0) {
@@ -282,7 +291,12 @@
                 }
 
             } catch (error) {
-                showStatus('Problème de connexion avec le serveur Drive. 🌿', false);
+                console.error("Erreur de POST:", error);
+                if (error.name === 'TypeError' || error.message.includes('fetch')) {
+                    showStatus('<b>Erreur de sécurité (CORS)</b> : Le script Google Apps Script doit être déployé avec l\'accès "Tout le monde".', false);
+                } else {
+                    showStatus('Problème de connexion avec le serveur Drive. 🌿', false);
+                }
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('opacity-70');
@@ -293,9 +307,12 @@
                     progressBar.style.width = '0%';
                 }, 1000);
 
-                setTimeout(() => {
-                    statusMessage.classList.add('hidden');
-                }, 6000);
+                // Ne cache pas le message d'erreur s'il y a eu un problème CORS pour qu'on ait le temps de le lire
+                if (successCount > 0) {
+                    setTimeout(() => {
+                        statusMessage.classList.add('hidden');
+                    }, 6000);
+                }
             }
         });
     </script>
