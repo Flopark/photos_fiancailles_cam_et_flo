@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camille & Florian 💍</title>
+    <title>Florian & Camille 💍</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Nunito:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
@@ -14,6 +14,10 @@
         @media (min-width: 768px) { .masonry { column-count: 3; } }
         .masonry-item { break-inside: avoid; margin-bottom: 1rem; }
         input[type="file"]::file-selector-button { display: none; }
+        
+        /* Animation de chargement */
+        .loader { border: 4px solid #eefbf0; border-top: 4px solid #81b29a; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="antialiased pb-20">
@@ -23,7 +27,7 @@
         <div class="text-center mb-12">
             <div class="text-3xl text-[#7eb28f] tracking-[0.3em] mb-4 opacity-70">✦ ✦ ✦</div>
             <h1 class="font-serif text-6xl md:text-8xl text-[#2a4531] mb-2">
-                Camille <span class="italic text-[#81b29a]">&</span> Florian
+                Florian <span class="italic text-[#81b29a]">&</span> Camille
             </h1>
             <p class="text-[#597a62] tracking-widest uppercase text-sm md:text-base mt-6">Nos Fiançailles</p>
             <div class="flex items-center justify-center gap-4 mt-8 max-w-md mx-auto">
@@ -33,7 +37,9 @@
             </div>
         </div>
 
-        <!-- Section Upload -->
+        <!-- ========================================== -->
+        <!-- ZONE 1 : EXPORTATION DES PHOTOS (UPLOAD)   -->
+        <!-- ========================================== -->
         <div class="max-w-2xl mx-auto glass-card rounded-3xl p-6 md:p-10 mb-16">
             <h2 class="font-serif text-3xl md:text-4xl text-center text-[#2a4531] mb-2">📸 Partagez vos souvenirs</h2>
             <p class="text-center text-[#597a62] mb-8">Immortalisez ce moment magique en ajoutant vos plus belles photos</p>
@@ -66,7 +72,6 @@
 
                 <div id="statusMessage" class="hidden text-center p-4 rounded-xl mt-4 font-semibold transition-all"></div>
                 
-                <!-- Barre de progression -->
                 <div id="progressContainer" class="hidden w-full bg-white border border-[#bce0c6] rounded-full h-3 mt-2 overflow-hidden">
                     <div id="progressBar" class="bg-gradient-to-r from-[#6e9f86] to-[#a2d2b5] h-full rounded-full transition-all duration-300" style="width: 0%"></div>
                 </div>
@@ -79,26 +84,38 @@
             <div class="h-px bg-gradient-to-l from-transparent to-[#bce0c6] flex-1"></div>
         </div>
 
-        <!-- Section Galerie -->
+        <!-- ========================================== -->
+        <!-- ZONE 2 : LECTURE DE L'ALBUM DEPUIS DRIVE   -->
+        <!-- ========================================== -->
         <div class="text-center mb-8">
             <h2 class="font-serif text-4xl text-[#2a4531]">Notre album partagé</h2>
+            <p class="text-[#597a62] mt-2">Toutes les photos de l'événement se trouvent ici !</p>
         </div>
 
-        <div id="gallery" class="masonry"></div>
+        <!-- Indicateur de chargement de la galerie -->
+        <div id="galleryLoader" class="text-center py-10">
+            <div class="loader mb-4"></div>
+            <p class="text-[#7eb28f] italic" id="loaderText">Lecture des photos depuis le Drive en cours...</p>
+        </div>
 
-        <div id="emptyGallery" class="text-center text-[#7eb28f] py-12 italic">
-            Aucune photo pour l'instant... Soyez le premier à partager ! 💕
+        <div id="gallery" class="masonry hidden"></div>
+
+        <div id="emptyGallery" class="hidden text-center text-[#7eb28f] py-12 italic border-2 border-dashed border-[#bce0c6] rounded-3xl mx-auto max-w-2xl">
+            L'album est encore vide...<br>Soyez le premier à ajouter une photo ci-dessus ! 💕
         </div>
 
         <!-- Pied de page -->
         <div class="text-center mt-20 font-serif italic text-[#6e9f86] text-xl">
-            Avec tout notre amour — Camille & Florian
+            Avec tout notre amour — Florian & Camille
         </div>
     </div>
 
     <script>
-        const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwz_OITwYMomn7ctTY1DZrXKg3P2ZS5RAAvhjUGgE65UGX5p8KCoB-4XnDR_4wPJa3f6g/exec";
-    
+        // --- CONFIGURATION ---
+        // ⚠️ REMPLACEZ CETTE URL PAR LA VOTRE
+        const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyYeeYrSztwNzIoQFEDmYR6CaGsFGHjsMUBqRXP0Jwp9FGQ1c3fNGPnsS8Br3YSdCSeLQ/exec";
+
+        // --- ELEMENTS DU DOM ---
         const fileInput = document.getElementById('fileInput');
         const previewContainer = document.getElementById('previewContainer');
         const submitBtn = document.getElementById('submitBtn');
@@ -108,31 +125,70 @@
         const progressBar = document.getElementById('progressBar');
         const gallery = document.getElementById('gallery');
         const emptyGallery = document.getElementById('emptyGallery');
-    
+        const galleryLoader = document.getElementById('galleryLoader');
+        const loaderText = document.getElementById('loaderText');
+
         let selectedFiles = [];
         let galleryPhotos = [];
-    
-        // ✅ NOUVEAU : Charger les photos existantes depuis le Drive au démarrage
-        async function loadGalleryFromDrive() {
-            emptyGallery.textContent = "⏳ Chargement de l'album...";
+
+        // --- FONCTION : LIRE LES PHOTOS DU DRIVE DANS L'ORDRE ---
+        window.addEventListener('load', async () => {
             try {
-                const response = await fetch(GOOGLE_WEB_APP_URL);
+                // On interroge le Google Drive
+                const response = await fetch(GOOGLE_WEB_APP_URL, {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+                
                 const data = await response.json();
-    
-                if (data.success && data.photos.length > 0) {
-                    galleryPhotos = data.photos;
-                    renderGallery();
-                } else {
-                    emptyGallery.classList.remove('hidden');
-                    emptyGallery.textContent = "Aucune photo pour l'instant... Soyez le premier à partager ! 💕";
+                
+                if (data.status === "success" && data.files && data.files.length > 0) {
+                    // Pour chaque fichier trouvé dans le drive, on prépare son affichage
+                    galleryPhotos = data.files.map(file => ({
+                        // 🔑 ASTUCE : Utiliser l'API thumbnail de Google garantit que l'image s'affiche toujours sur les sites web
+                        src: `https://drive.google.com/thumbnail?id=${file.id}&sz=w1000`, 
+                        author: file.author
+                    }));
                 }
-            } catch (err) {
-                console.error("Erreur chargement galerie:", err);
-                emptyGallery.textContent = "Impossible de charger l'album pour l'instant 🌿";
+            } catch (error) {
+                console.error("Erreur de lecture Drive:", error);
+                loaderText.textContent = "Impossible de charger l'album pour le moment.";
+            } finally {
+                galleryLoader.classList.add('hidden');
+                renderGallery(); // On dessine la galerie avec ce qu'on a trouvé
+            }
+        });
+
+        // --- FONCTION : DESSINER LA GALERIE ---
+        function renderGallery() {
+            gallery.innerHTML = '';
+            
+            if (galleryPhotos.length === 0) {
+                // Si aucune photo n'a été lue
+                emptyGallery.classList.remove('hidden');
+                gallery.classList.add('hidden');
+            } else {
+                // Si des photos ont été lues
+                emptyGallery.classList.add('hidden');
+                gallery.classList.remove('hidden');
+                
+                // On affiche chaque photo l'une après l'autre
+                galleryPhotos.forEach(photo => {
+                    const item = document.createElement('div');
+                    item.className = 'masonry-item bg-white rounded-xl overflow-hidden shadow-sm border border-[#e8f3e9] transition-transform hover:-translate-y-1 hover:shadow-md';
+                    
+                    item.innerHTML = `
+                        <img src="${photo.src}" class="w-full h-auto bg-gray-100" loading="lazy" alt="Photo">
+                        <div class="p-3 bg-white border-t border-[#f0fdf4] text-center">
+                            <p class="text-sm font-semibold text-[#416149]">✨ ${photo.author}</p>
+                        </div>
+                    `;
+                    gallery.appendChild(item);
+                });
             }
         }
-    
-        // Gérer la sélection de fichiers
+
+        // --- GESTION DE L'UPLOAD ---
         fileInput.addEventListener('change', function(e) {
             const files = Array.from(e.target.files);
             files.forEach(file => {
@@ -143,9 +199,10 @@
                         const imgDiv = document.createElement('div');
                         imgDiv.className = 'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 border-white shadow-sm relative group';
                         imgDiv.innerHTML = '<img src="' + event.target.result + '" class="w-full h-full object-cover"><div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white text-xs font-bold">X</div>';
+                        
                         imgDiv.querySelector('div').addEventListener('click', function() {
                             const index = selectedFiles.indexOf(file);
-                            if (index > -1) selectedFiles.splice(index, 1);
+                            if (index > -1) { selectedFiles.splice(index, 1); }
                             imgDiv.remove();
                         });
                         previewContainer.appendChild(imgDiv);
@@ -153,99 +210,94 @@
                     reader.readAsDataURL(file);
                 }
             });
-            fileInput.value = '';
+            fileInput.value = ''; 
         });
-    
+
         function showStatus(msg, isSuccess) {
             statusMessage.textContent = msg;
             statusMessage.className = 'text-center p-4 rounded-xl mt-4 font-semibold ' + (isSuccess ? 'bg-[#d1e7d8] text-[#2a4531]' : 'bg-[#f8d7da] text-[#721c24]');
             statusMessage.classList.remove('hidden');
         }
-    
+
         submitBtn.addEventListener('click', async function() {
             statusMessage.classList.add('hidden');
+            
             const name = authorName.value.trim();
             if (!name) { showStatus('Oops ! Indiquez votre prénom pour signer vos photos 💕', false); return; }
             if (selectedFiles.length === 0) { showStatus('Sélectionnez au moins une photo à partager 🌿', false); return; }
-    
+
             submitBtn.disabled = true;
             submitBtn.classList.add('opacity-70');
             submitBtn.textContent = "⏳ Envoi en cours...";
             progressContainer.classList.remove('hidden');
-            progressBar.style.width = '10%';
-    
+            progressBar.style.width = '10%'; 
+
             let successCount = 0;
             const totalFiles = selectedFiles.length;
-    
+
             try {
                 for (let i = 0; i < selectedFiles.length; i++) {
                     const file = selectedFiles[i];
+                    
                     const base64Data = await new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onload = (e) => resolve(e.target.result);
                         reader.readAsDataURL(file);
                     });
+
                     const base64String = base64Data.split(',')[1];
+                    
                     let formData = new URLSearchParams();
                     formData.append('fileName', name + "_" + file.name);
                     formData.append('mimeType', file.type);
                     formData.append('fileData', base64String);
-    
+
                     const response = await fetch(GOOGLE_WEB_APP_URL, {
                         method: 'POST',
                         body: formData,
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
                     });
-    
+
                     if (response.ok) {
                         successCount++;
-                        // Ajout optimiste en tête de galerie avec le base64 local
-                        galleryPhotos.unshift({ src: base64Data, author: name });
+                        // On ajoute la nouvelle photo tout en haut de la galerie existante
+                        galleryPhotos.unshift({
+                            src: base64Data,
+                            author: name
+                        });
                     }
-    
-                    progressBar.style.width = Math.round(((i + 1) / totalFiles) * 100) + '%';
+
+                    const progress = Math.round(((i + 1) / totalFiles) * 100);
+                    progressBar.style.width = progress + '%';
                 }
-    
+
+                // On redessine la galerie pour inclure la nouveauté
                 renderGallery();
-    
+
                 if (successCount > 0) {
-                    showStatus('🎉 ' + successCount + ' photo(s) bien sauvegardée(s), merci ' + name + ' ! 💖', true);
+                    showStatus('🎉 ' + successCount + ' photo(s) bien ajoutée(s) à l\'album ! 💖', true);
                     selectedFiles = [];
                     previewContainer.innerHTML = '';
                     authorName.value = '';
-                } else {
-                    showStatus('Une erreur est survenue lors de l\'enregistrement. 🙏', false);
                 }
-    
+
             } catch (error) {
-                console.error("Erreur:", error);
-                showStatus('Problème de connexion. Réessayez plus tard 🌿', false);
+                showStatus('Problème de connexion avec le serveur Drive. 🌿', false);
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('opacity-70');
                 submitBtn.textContent = "✨ Envoyer mes photos";
-                setTimeout(() => { progressContainer.classList.add('hidden'); progressBar.style.width = '0%'; }, 1000);
-                setTimeout(() => { statusMessage.classList.add('hidden'); }, 6000);
+                
+                setTimeout(() => {
+                    progressContainer.classList.add('hidden');
+                    progressBar.style.width = '0%';
+                }, 1000);
+
+                setTimeout(() => {
+                    statusMessage.classList.add('hidden');
+                }, 6000);
             }
         });
-    
-        function renderGallery() {
-            gallery.innerHTML = '';
-            if (galleryPhotos.length > 0) {
-                emptyGallery.classList.add('hidden');
-                galleryPhotos.forEach(photo => {
-                    const item = document.createElement('div');
-                    item.className = 'masonry-item bg-white rounded-xl overflow-hidden shadow-sm border border-[#e8f3e9] transition-transform hover:-translate-y-1 hover:shadow-md';
-                    item.innerHTML = '<img src="' + photo.src + '" class="w-full h-auto" loading="lazy"><div class="p-3 bg-white border-t border-[#f0fdf4] text-center"><p class="text-sm font-semibold text-[#416149]">✨ ' + photo.author + '</p></div>';
-                    gallery.appendChild(item);
-                });
-            } else {
-                emptyGallery.classList.remove('hidden');
-            }
-        }
-    
-        // ✅ Lancer le chargement au démarrage
-        loadGalleryFromDrive();
     </script>
 </body>
 </html>
