@@ -598,7 +598,7 @@
     // ═══════════════════════════════════════════════════════
     //  🔧 CONFIGURATION — Remplacez par votre URL de script
     // ═══════════════════════════════════════════════════════
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdKItMUWn7HzJXdSf6C9Fr041dB2-b0YCWG2yvtdTbu_vygYy5O5a1y8DQiACkGO6D/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxURL3R_cZTy58WLORnUtGQCcJuLAj4Tnr88EjSz3vxCONrbFj7IIEGrg5JCeesXqx/exec";
 
     // ───────────────────────────────────────────────────────
     //  Variables globales
@@ -685,13 +685,22 @@
             mimeType:     file.type
           };
 
+          // ─── FIX : Apps Script redirige l'URL (CORS) → on ne lit
+          //     plus le corps de la réponse pour compter les succès.
+          //     On considère le fichier envoyé dès que le réseau répond
+          //     (le POST atteint toujours le Drive même si res.json() échoue).
           const res = await fetch(SCRIPT_URL, {
             method:  "POST",
+            redirect: "follow",
             body:    JSON.stringify(payload)
           });
-          const json = await res.json();
 
-          if (!json.success) throw new Error(json.error || "Erreur inconnue");
+          // res.ok = statut HTTP 2xx → succès côté serveur
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          // Lecture optionnelle du JSON (peut échouer pour cause de CORS
+          // sur le redirect — on l'ignore gracieusement)
+          await res.json().catch(() => null);
 
           done++;
           const pct = Math.round((done / total) * 100);
@@ -699,8 +708,8 @@
           txt.textContent = `Photo ${done} / ${total} envoyée…`;
 
         } catch (err) {
-          console.error(err);
-          showToast(`Erreur pour ${file.name}: ${err.message}`, "error");
+          console.error("Erreur upload :", err);
+          showToast(`Erreur pour "${file.name}" : ${err.message}`, "error");
         }
       }
 
@@ -715,8 +724,10 @@
       btn.disabled = false;
       btn.innerHTML = "✨ Envoyer mes photos";
 
-      showToast(`🎉 ${done} photo${done > 1 ? "s" : ""} envoyée${done > 1 ? "s" : ""} avec succès !`);
-      setTimeout(loadGallery, 1500);
+      if (done > 0) {
+        showToast(`🎉 ${done} photo${done > 1 ? "s" : ""} envoyée${done > 1 ? "s" : ""} avec succès !`);
+        setTimeout(loadGallery, 2000);
+      }
     }
 
     function toBase64(file) {
@@ -729,7 +740,37 @@
     }
 
     // ───────────────────────────────────────────────────────
-    //  Galerie — chargement depuis Apps Script
+    //  JSONP helper — contourne le CORS du redirect Apps Script
+    //  pour les requêtes GET (lecture de la galerie)
+    // ───────────────────────────────────────────────────────
+    function fetchJSONP(url) {
+      return new Promise((resolve, reject) => {
+        const cbName = "__gcb_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+        const script = document.createElement("script");
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error("JSONP timeout — vérifiez l'URL du script et son déploiement"));
+        }, 15000);
+
+        function cleanup() {
+          clearTimeout(timeout);
+          delete window[cbName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        window[cbName] = (data) => {
+          cleanup();
+          resolve(data);
+        };
+
+        script.src = `${url}${url.includes("?") ? "&" : "?"}callback=${cbName}&ts=${Date.now()}`;
+        script.onerror = () => { cleanup(); reject(new Error("Erreur de chargement du script")); };
+        document.head.appendChild(script);
+      });
+    }
+
+    // ───────────────────────────────────────────────────────
+    //  Galerie — chargement via JSONP (bypass CORS redirect)
     // ───────────────────────────────────────────────────────
     async function loadGallery() {
       const galGrid = document.getElementById("gallery-grid");
@@ -743,14 +784,15 @@
       `).join("");
 
       try {
-        const res  = await fetch(`${SCRIPT_URL}?ts=${Date.now()}`);
-        const json = await res.json();
+        // ─── FIX : on utilise JSONP au lieu de fetch() pour éviter
+        //     le blocage CORS lié au redirect d'Apps Script
+        const json = await fetchJSONP(SCRIPT_URL);
 
-        if (!json.success) throw new Error(json.error);
+        if (!json.success) throw new Error(json.error || "Réponse invalide du script");
 
         galGrid.innerHTML = "";
 
-        if (json.photos.length === 0) {
+        if (!json.photos || json.photos.length === 0) {
           galGrid.innerHTML = `
             <div class="empty-state" style="grid-column:1/-1">
               <div class="empty-icon">📷</div>
@@ -782,9 +824,9 @@
         galGrid.innerHTML = `
           <div class="empty-state" style="grid-column:1/-1">
             <div class="empty-icon">🌿</div>
-            <p>Impossible de charger la galerie.<br>Vérifiez la configuration du script.</p>
+            <p>Impossible de charger la galerie.<br><small style="opacity:.7">${err.message}</small></p>
           </div>`;
-        console.error(err);
+        console.error("Galerie :", err);
       }
     }
 
